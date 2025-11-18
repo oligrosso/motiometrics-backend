@@ -1,11 +1,19 @@
 // URL del backend en Render
-const API_URL = "https://motiometrics-backend.onrender.com";
+const API_URL = "https://motiometrics-backend.onrender.com"; 
+
+const { jsPDF } = window.jspdf; // Importar jsPDF desde la ventana global
 
 const fileInput = document.getElementById('fileInput');
 const dropzone = document.getElementById('dropzone');
 const spinner = document.getElementById('spinner');
+const btnExport = document.getElementById('btnExport');
 
-// Event Listeners para Drag & Drop
+// Variables globales para guardar estado
+let datosAnalisis = null; // Aquí guardaremos la respuesta del backend
+let observaciones = [];   // Aquí acumularemos las observaciones
+
+// --- 1. MANEJO DE ARCHIVOS (Drag & Drop) ---
+
 dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropzone.classList.add('drag-over');
@@ -18,19 +26,16 @@ dropzone.addEventListener('drop', (e) => {
     if (files.length) handleFileUpload(files[0]);
 });
 
-// Event Listener para Input File manual
 fileInput.addEventListener('change', (e) => {
     if (e.target.files.length) handleFileUpload(e.target.files[0]);
 });
 
-// Lógica Principal de Subida y Análisis
 async function handleFileUpload(file) {
     if (!file.name.endsWith('.csv')) {
         alert("Por favor sube un archivo .csv válido");
         return;
     }
 
-    // UI Feedback
     dropzone.classList.add('loading');
     dropzone.innerHTML = `Analizando <strong>${file.name}</strong>...`;
     spinner.style.display = 'block';
@@ -47,9 +52,9 @@ async function handleFileUpload(file) {
         if (!response.ok) throw new Error('Error en el análisis del servidor');
 
         const data = await response.json();
+        datosAnalisis = data; // Guardamos datos para el reporte
         mostrarResultados(data);
 
-        // Feedback Éxito
         dropzone.classList.remove('loading');
         dropzone.classList.add('success');
         dropzone.innerHTML = `<strong>${file.name}</strong> analizado correctamente.`;
@@ -65,45 +70,279 @@ async function handleFileUpload(file) {
 }
 
 function mostrarResultados(data) {
-    // 1. Actualizar Métricas Numéricas
+    // Actualizar Métricas UI
     document.getElementById('valor-f-dom').textContent = `${data.metricas.frecuencia_dominante} Hz`;
     document.getElementById('valor-psd-peak').textContent = data.metricas.psd_pico;
 
-    // 2. Renderizar Gráfico de Frecuencia (FFT)
+    // Gráfico 1: Espectro
     const traceFreq = {
         x: data.graficos.freq_x,
         y: data.graficos.freq_y,
         type: 'scatter',
         mode: 'lines',
         name: 'Espectro',
-        line: { color: '#0284c7' }
+        line: { color: '#0284c7', width: 2 },
+        fill: 'tozeroy', // Relleno bonito
+        fillcolor: 'rgba(2, 132, 199, 0.1)'
     };
     
     const layoutFreq = {
         title: 'Espectro de Frecuencia (FFT)',
-        margin: { t: 30, b: 30, l: 40, r: 20 },
-        xaxis: { title: 'Hz' },
-        yaxis: { title: 'Amplitud' }
+        font: { family: 'Inter, sans-serif' },
+        margin: { t: 40, b: 40, l: 50, r: 20 },
+        xaxis: { title: 'Frecuencia (Hz)' },
+        yaxis: { title: 'Amplitud' },
+        showlegend: false
     };
     
     Plotly.newPlot('chartFreqAmp', [traceFreq], layoutFreq);
 
-    // 3. Renderizar Gráfico RMS en el tiempo
+    // Gráfico 2: RMS
     const traceRMS = {
-        x: data.graficos.tiempo, // Timestamps simplificados
+        x: data.graficos.tiempo,
         y: data.graficos.rms,
         type: 'scatter',
         mode: 'lines',
         name: 'RMS Combinado',
-        line: { color: '#dc2626' }
+        line: { color: '#dc2626', width: 1.5 }
     };
 
     const layoutRMS = {
         title: 'Energía del Temblor (RMS) en el tiempo',
-        margin: { t: 30, b: 30, l: 40, r: 20 },
+        font: { family: 'Inter, sans-serif' },
+        margin: { t: 40, b: 40, l: 50, r: 20 },
         xaxis: { title: 'Tiempo' },
-        yaxis: { title: 'Amplitud RMS' }
+        yaxis: { title: 'Amplitud RMS' },
+        showlegend: false
     };
 
     Plotly.newPlot('chartRMSTime', [traceRMS], layoutRMS);
+}
+
+// --- 2. GESTIÓN DE OBSERVACIONES ---
+
+document.getElementById('btnAddObservation').addEventListener('click', () => {
+    const desc = document.getElementById('obsDescription').value;
+    const start = document.getElementById('obsStartTime').value;
+    const end = document.getElementById('obsEndTime').value;
+
+    if (!desc) {
+        alert("Escribe una descripción para la observación.");
+        return;
+    }
+
+    const obs = {
+        descripcion: desc,
+        inicio: start || "--:--",
+        fin: end || "--:--"
+    };
+
+    observaciones.push(obs);
+    renderObservaciones();
+    
+    // Limpiar inputs
+    document.getElementById('obsDescription').value = "";
+    document.getElementById('obsStartTime').value = "";
+    document.getElementById('obsEndTime').value = "";
+});
+
+function renderObservaciones() {
+    const list = document.getElementById('observationList');
+    if (observaciones.length === 0) {
+        list.innerHTML = "No hay observaciones.";
+        return;
+    }
+    
+    let html = '<ul style="padding-left: 20px; margin: 0;">';
+    observaciones.forEach((obs, index) => {
+        html += `<li style="margin-bottom: 4px;">
+            <strong>[${obs.inicio} - ${obs.fin}]</strong> ${obs.descripcion}
+        </li>`;
+    });
+    html += '</ul>';
+    list.innerHTML = html;
+}
+
+// --- 3. GENERACIÓN Y EXPORTACIÓN DE PDF ---
+
+btnExport.addEventListener('click', async () => {
+    if (!datosAnalisis) {
+        alert("Primero debes cargar y analizar un archivo.");
+        return;
+    }
+
+    // Cambiar texto botón para feedback
+    const originalText = btnExport.textContent;
+    btnExport.textContent = "⏳ Generando PDF...";
+    
+    try {
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const margin = 20;
+        let currentY = 20;
+
+        // --- ENCABEZADO ---
+        // Barra azul decorativa
+        doc.setFillColor(16, 44, 89); // Azul oscuro (#102C59)
+        doc.rect(0, 0, pageWidth, 25, 'F');
+
+        // Título blanco
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text("MotioMetrics", margin, 17);
+
+        // Subtítulo blanco
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "normal");
+        doc.text("Informe de Análisis de Temblor", pageWidth - margin, 17, { align: "right" });
+
+        // Intentar agregar logo (Si existe en el DOM y es cargable)
+        try {
+            const logoImg = document.querySelector('.app-logo');
+            if (logoImg) {
+                const logoBase64 = getBase64Image(logoImg);
+                // Ajustar posición del logo sobre la barra azul
+                doc.addImage(logoBase64, 'PNG', margin + 45, 5, 15, 15); 
+            }
+        } catch (e) { console.warn("No se pudo cargar el logo al PDF", e); }
+
+        currentY = 40;
+
+        // --- DATOS DEL PACIENTE ---
+        doc.setTextColor(33, 33, 33); // Gris oscuro
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Datos del Paciente", margin, currentY);
+        
+        // Línea separadora
+        doc.setDrawColor(200, 200, 200);
+        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
+        currentY += 10;
+
+        // Recuperar valores de los inputs
+        const pName = document.getElementById('pName').value || "No especificado";
+        const pId = document.getElementById('pId').value || "---";
+        const pAge = document.getElementById('pAge').value || "--";
+        const pGender = document.getElementById('pGender').value || "--";
+        const pDate = new Date().toLocaleDateString();
+
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        
+        // Grid de datos (Nombre, ID, Edad, etc)
+        doc.text(`Nombre: ${pName}`, margin, currentY);
+        doc.text(`ID / Historia: ${pId}`, margin + 80, currentY);
+        currentY += 8;
+        doc.text(`Edad: ${pAge} años`, margin, currentY);
+        doc.text(`Género: ${pGender}`, margin + 80, currentY);
+        currentY += 8;
+        doc.text(`Fecha del reporte: ${pDate}`, margin, currentY);
+        
+        currentY += 15;
+
+        // --- MÉTRICAS PRINCIPALES ---
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Métricas del Análisis", margin, currentY);
+        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
+        currentY += 12;
+
+        const fDom = document.getElementById('valor-f-dom').textContent;
+        const psdPeak = document.getElementById('valor-psd-peak').textContent;
+
+        // Cuadro de métricas destacado
+        doc.setFillColor(240, 249, 255); // Azul muy claro
+        doc.setDrawColor(186, 230, 253); // Borde celeste
+        doc.roundedRect(margin, currentY, pageWidth - (margin * 2), 25, 3, 3, 'FD');
+        
+        doc.setFontSize(12);
+        doc.setTextColor(16, 44, 89);
+        doc.text(`Frecuencia Dominante: ${fDom}`, margin + 10, currentY + 10);
+        doc.text(`Pico de Potencia (PSD): ${psdPeak}`, margin + 10, currentY + 18);
+        
+        currentY += 40;
+
+        // --- GRÁFICOS ---
+        // Convertir gráficos de Plotly a imágenes PNG de alta calidad
+        doc.setTextColor(33, 33, 33);
+        doc.setFont("helvetica", "bold");
+        doc.text("Gráficos", margin, currentY);
+        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
+        currentY += 10;
+
+        if (document.getElementById('chartFreqAmp').data) {
+            const img1 = await Plotly.toImage(document.getElementById('chartFreqAmp'), {format: 'png', width: 800, height: 400});
+            doc.addImage(img1, 'PNG', margin, currentY, 170, 85); // Ajustar tamaño A4
+            currentY += 95;
+        }
+
+        // Verificar si cabe en la página, si no, nueva página
+        if (currentY > 250) {
+            doc.addPage();
+            currentY = 20;
+        }
+
+        if (document.getElementById('chartRMSTime').data) {
+            const img2 = await Plotly.toImage(document.getElementById('chartRMSTime'), {format: 'png', width: 800, height: 400});
+            doc.addImage(img2, 'PNG', margin, currentY, 170, 85);
+            currentY += 95;
+        }
+
+        // --- OBSERVACIONES ---
+        if (currentY > 240) {
+            doc.addPage();
+            currentY = 20;
+        }
+
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Observaciones Clínicas", margin, currentY);
+        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
+        currentY += 10;
+
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+
+        if (observaciones.length > 0) {
+            observaciones.forEach(obs => {
+                const texto = `• [${obs.inicio} - ${obs.fin}]: ${obs.descripcion}`;
+                // Dividir texto largo para que no se salga de la página
+                const splitText = doc.splitTextToSize(texto, pageWidth - (margin * 2));
+                doc.text(splitText, margin, currentY);
+                currentY += (7 * splitText.length);
+            });
+        } else {
+            doc.setTextColor(100, 100, 100);
+            doc.text("No se registraron observaciones adicionales.", margin, currentY);
+        }
+
+        // --- PIE DE PÁGINA ---
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(9);
+            doc.setTextColor(150, 150, 150);
+            doc.text(`Generado por MotioMetrics - Página ${i} de ${totalPages}`, pageWidth / 2, 290, { align: "center" });
+        }
+
+        // Guardar PDF
+        doc.save(`Informe_Tremor_${pName.replace(/\s+/g, '_')}.pdf`);
+
+    } catch (error) {
+        console.error("Error generando PDF:", error);
+        alert("Hubo un error al generar el informe PDF.");
+    } finally {
+        btnExport.textContent = originalText;
+    }
+});
+
+// Función auxiliar para convertir imagen HTML (logo) a Base64
+function getBase64Image(img) {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL("image/png");
 }
