@@ -166,175 +166,154 @@ function renderObservaciones() {
 // --- 3. GENERACIÓN Y EXPORTACIÓN DE PDF ---
 
 btnExport.addEventListener('click', async () => {
-    if (!datosAnalisis) {
-        alert("Primero debes cargar y analizar un archivo.");
+    if (!window.jspdf) {
+        alert("Error: La librería jsPDF no se cargó correctamente. Recarga la página.");
         return;
     }
 
-    // Cambiar texto botón para feedback
-    const originalText = btnExport.textContent;
-    btnExport.textContent = "⏳ Generando PDF...";
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF("p", "mm", "a4"); // Formato A4 vertical
+    const pageHeight = doc.internal.pageSize.height;
+
+    // Obtener datos actuales del formulario
+    const pName = document.getElementById('pName').value || "Paciente";
+    const pId = document.getElementById('pId').value || "---";
+    const pAge = document.getElementById('pAge').value || "--";
+    const pGender = document.getElementById('pGender').value || "--";
+    const today = new Date().toLocaleDateString().replace(/\//g, '-'); // Formato dd-mm-yyyy
+
+    // --- PÁGINA 1: TEXTO Y DATOS ---
     
+    // Encabezado Azul
+    doc.setFillColor(16, 44, 89); // Azul oscuro corporativo
+    doc.rect(0, 0, 210, 25, 'F'); // Barra superior
+    
+    // LOGO (Usamos el logo oculto específico para PDF)
     try {
-        const doc = new jsPDF();
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const margin = 20;
-        let currentY = 20;
+        // CAMBIO: Buscamos el ID del logo oculto
+        const logoImg = document.getElementById('pdf-logo-hidden');
+        if (logoImg && logoImg.complete) {
+            const logoData = getBase64Image(logoImg);
+            doc.addImage(logoData, 'PNG', 10, 5, 15, 15); // Logo en x=10
+        }
+    } catch(e) { console.log("Logo no disponible para PDF", e); }
 
-        // --- ENCABEZADO ---
-        // Barra azul decorativa
-        doc.setFillColor(16, 44, 89); // Azul oscuro (#102C59)
-        doc.rect(0, 0, pageWidth, 25, 'F');
+    // Título
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.text("MotioMetrics", 28, 17); // Texto desplazado a la derecha del logo
+    
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("Informe Clínico de Temblor", 200, 17, { align: "right" });
 
-        // Título blanco
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(22);
-        doc.setFont("helvetica", "bold");
-        doc.text("MotioMetrics", margin, 17);
 
-        // Subtítulo blanco
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "normal");
-        doc.text("Informe de Análisis de Temblor", pageWidth - margin, 17, { align: "right" });
+    let y = 40;
+    
+    // Datos Paciente
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Datos del Paciente", 10, y);
+    doc.line(10, y+2, 200, y+2);
+    y += 8;
 
-        // Intentar agregar logo (Si existe en el DOM y es cargable)
-        try {
-            const logoImg = document.querySelector('.app-logo');
-            if (logoImg) {
-                const logoBase64 = getBase64Image(logoImg);
-                // Ajustar posición del logo sobre la barra azul
-                doc.addImage(logoBase64, 'PNG', margin + 45, 5, 15, 15); 
-            }
-        } catch (e) { console.warn("No se pudo cargar el logo al PDF", e); }
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Nombre: ${pName}`, 10, y);
+    doc.text(`ID: ${pId}`, 110, y);
+    y += 6;
+    doc.text(`Edad: ${pAge}`, 10, y);
+    doc.text(`Género: ${pGender}`, 110, y);
+    y += 6;
+    doc.text(`Fecha reporte: ${new Date().toLocaleDateString()}`, 10, y);
 
-        currentY = 40;
+    y += 12;
 
-        // --- DATOS DEL PACIENTE ---
-        doc.setTextColor(33, 33, 33); // Gris oscuro
+    // Métricas
+    if (datosAnalisis) {
         doc.setFontSize(14);
         doc.setFont("helvetica", "bold");
-        doc.text("Datos del Paciente", margin, currentY);
-        
-        // Línea separadora
-        doc.setDrawColor(200, 200, 200);
-        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 10;
+        doc.text("Métricas Principales", 10, y);
+        doc.line(10, y+2, 200, y+2);
+        y += 8;
 
-        // Recuperar valores de los inputs
-        const pName = document.getElementById('pName').value || "No especificado";
-        const pId = document.getElementById('pId').value || "---";
-        const pAge = document.getElementById('pAge').value || "--";
-        const pGender = document.getElementById('pGender').value || "--";
-        const pDate = new Date().toLocaleDateString();
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "normal");
-        
-        // Grid de datos (Nombre, ID, Edad, etc)
-        doc.text(`Nombre: ${pName}`, margin, currentY);
-        doc.text(`ID / Historia: ${pId}`, margin + 80, currentY);
-        currentY += 8;
-        doc.text(`Edad: ${pAge} años`, margin, currentY);
-        doc.text(`Género: ${pGender}`, margin + 80, currentY);
-        currentY += 8;
-        doc.text(`Fecha del reporte: ${pDate}`, margin, currentY);
-        
-        currentY += 15;
-
-        // --- MÉTRICAS PRINCIPALES ---
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text("Métricas del Análisis", margin, currentY);
-        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 12;
-
-        const fDom = document.getElementById('valor-f-dom').textContent;
-        const psdPeak = document.getElementById('valor-psd-peak').textContent;
-
-        // Cuadro de métricas destacado
-        doc.setFillColor(240, 249, 255); // Azul muy claro
-        doc.setDrawColor(186, 230, 253); // Borde celeste
-        doc.roundedRect(margin, currentY, pageWidth - (margin * 2), 25, 3, 3, 'FD');
+        // Caja destacada
+        doc.setFillColor(240, 249, 255);
+        doc.rect(10, y, 190, 20, 'F');
         
         doc.setFontSize(12);
         doc.setTextColor(16, 44, 89);
-        doc.text(`Frecuencia Dominante: ${fDom}`, margin + 10, currentY + 10);
-        doc.text(`Pico de Potencia (PSD): ${psdPeak}`, margin + 10, currentY + 18);
+        doc.text(`Frecuencia Dominante: ${datosAnalisis.metricas.frecuencia_dominante} Hz`, 15, y+8);
+        doc.text(`Pico de Potencia (PSD): ${datosAnalisis.metricas.psd_pico}`, 15, y+15);
         
-        currentY += 40;
-
-        // --- GRÁFICOS ---
-        // Convertir gráficos de Plotly a imágenes PNG de alta calidad
-        doc.setTextColor(33, 33, 33);
-        doc.setFont("helvetica", "bold");
-        doc.text("Gráficos", margin, currentY);
-        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 10;
-
-        if (document.getElementById('chartFreqAmp').data) {
-            const img1 = await Plotly.toImage(document.getElementById('chartFreqAmp'), {format: 'png', width: 800, height: 400});
-            doc.addImage(img1, 'PNG', margin, currentY, 170, 85); // Ajustar tamaño A4
-            currentY += 95;
-        }
-
-        // Verificar si cabe en la página, si no, nueva página
-        if (currentY > 250) {
-            doc.addPage();
-            currentY = 20;
-        }
-
-        if (document.getElementById('chartRMSTime').data) {
-            const img2 = await Plotly.toImage(document.getElementById('chartRMSTime'), {format: 'png', width: 800, height: 400});
-            doc.addImage(img2, 'PNG', margin, currentY, 170, 85);
-            currentY += 95;
-        }
-
-        // --- OBSERVACIONES ---
-        if (currentY > 240) {
-            doc.addPage();
-            currentY = 20;
-        }
-
-        doc.setFontSize(14);
-        doc.setFont("helvetica", "bold");
-        doc.text("Observaciones Clínicas", margin, currentY);
-        doc.line(margin, currentY + 2, pageWidth - margin, currentY + 2);
-        currentY += 10;
-
-        doc.setFontSize(11);
-        doc.setFont("helvetica", "normal");
-
-        if (observaciones.length > 0) {
-            observaciones.forEach(obs => {
-                const texto = `• [${obs.inicio} - ${obs.fin}]: ${obs.descripcion}`;
-                // Dividir texto largo para que no se salga de la página
-                const splitText = doc.splitTextToSize(texto, pageWidth - (margin * 2));
-                doc.text(splitText, margin, currentY);
-                currentY += (7 * splitText.length);
-            });
-        } else {
-            doc.setTextColor(100, 100, 100);
-            doc.text("No se registraron observaciones adicionales.", margin, currentY);
-        }
-
-        // --- PIE DE PÁGINA ---
-        const totalPages = doc.internal.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i++) {
-            doc.setPage(i);
-            doc.setFontSize(9);
-            doc.setTextColor(150, 150, 150);
-            doc.text(`Generado por MotioMetrics - Página ${i} de ${totalPages}`, pageWidth / 2, 290, { align: "center" });
-        }
-
-        // Guardar PDF
-        doc.save(`Informe_Tremor_${pName.replace(/\s+/g, '_')}.pdf`);
-
-    } catch (error) {
-        console.error("Error generando PDF:", error);
-        alert("Hubo un error al generar el informe PDF.");
-    } finally {
-        btnExport.textContent = originalText;
+        y += 28;
     }
+
+    // Observaciones
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text("Observaciones Clínicas", 10, y);
+    doc.line(10, y+2, 200, y+2);
+    y += 8;
+
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    
+    if (observaciones.length === 0) {
+        doc.setTextColor(100);
+        doc.text("No se registraron observaciones adicionales.", 10, y);
+        y += 10;
+    } else {
+        observaciones.forEach(obs => {
+            const linea = `• [${obs.inicio} - ${obs.fin}]: ${obs.descripcion}`;
+            const splitText = doc.splitTextToSize(linea, 180);
+            doc.text(splitText, 10, y);
+            y += (6 * splitText.length);
+        });
+    }
+
+    // --- PÁGINA 2: GRÁFICOS ---
+    if (datosAnalisis) {
+        doc.addPage();
+        
+        doc.setFillColor(16, 44, 89);
+        doc.rect(0, 0, 210, 15, 'F');
+        doc.setTextColor(255);
+        doc.setFontSize(10);
+        doc.text("MotioMetrics - Gráficos", 10, 10);
+
+        let imgY = 25;
+        const chartHeight = 75;
+
+        try {
+            // Gráfico 1
+            if (document.getElementById('chartFreqAmp').data) {
+                const img1 = await Plotly.toImage(document.getElementById('chartFreqAmp'), {format: 'png', width: 800, height: 400});
+                doc.addImage(img1, 'PNG', 15, imgY, 180, chartHeight);
+                imgY += chartHeight + 10;
+            }
+            
+            // Gráfico 2
+            if (document.getElementById('chartRMSTime').data) {
+                // Nueva página si no cabe
+                if ((imgY + chartHeight) > (pageHeight - 10)) {
+                     doc.addPage();
+                     imgY = 20;
+                }
+                
+                const img2 = await Plotly.toImage(document.getElementById('chartRMSTime'), {format: 'png', width: 800, height: 400});
+                doc.addImage(img2, 'PNG', 15, imgY, 180, chartHeight);
+            }
+        } catch (err) {
+            console.error("Error capturando gráficos", err);
+        }
+    }
+    
+    const safeName = pName.replace(/\s+/g, '_');
+    doc.save(`${safeName}_${today}_Motio.pdf`);
 });
 
 // Función auxiliar para convertir imagen HTML (logo) a Base64
