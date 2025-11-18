@@ -75,17 +75,17 @@ function mostrarResultados(data) {
     document.getElementById('valor-psd-peak').textContent = data.metricas.psd_pico;
 
     // --- LÓGICA DE TEXTO DINÁMICO ---
-    const textoEstado = document.getElementById('texto-estado-temblor');
+    //const textoEstado = document.getElementById('texto-estado-temblor');
     
-    if (data.metricas.tiene_temblor) {
-        textoEstado.textContent = "Valores promedio calculados durante episodios de temblor.";
-        textoEstado.style.color = "var(--muted)"; // Gris normal
-        textoEstado.style.fontWeight = "normal";
-    } else {
-        textoEstado.textContent = "El paciente no presentó episodios de temblor significativos.";
-        textoEstado.style.color = "var(--success)"; // Verde para indicar "todo bien"
-        textoEstado.style.fontWeight = "600";
-    }
+    //if (data.metricas.tiene_temblor) {
+    //    textoEstado.textContent = "Valores promedio calculados durante episodios de temblor.";
+    //    textoEstado.style.color = "var(--muted)"; // Gris normal
+    //    textoEstado.style.fontWeight = "normal";
+    //} else {
+    //    textoEstado.textContent = "El paciente no presentó episodios de temblor significativos.";
+    //    textoEstado.style.color = "var(--success)"; // Verde para indicar "todo bien"
+    //    textoEstado.style.fontWeight = "600";
+    //}
 
     // Gráfico 1: Espectro
     const traceFreq = {
