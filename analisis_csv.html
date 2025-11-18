@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MotioMetrics – Análisis de Archivo</title>
+  <link href="styles.css" rel="stylesheet" />
+  <!-- Librerías de Gráficos -->
+  <!-- ¡ELIMINADO! Chart.js ya no se usa en esta página -->
+  <!-- ¡NUEVO! Añadimos Plotly.js para los gráficos científicos -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+  
+  <!-- ¡Los estilos de cabecera ahora están en styles.css! -->
+</head>
+
+<body>
+  <div class="app">
+
+    <header>
+
+      <!-- Bloque de Branding (Logo + Título/Subtítulo) - Funciona como botón de regreso a index.html -->
+      <a href="index.html" class="header-branding">
+        <img src="motio-logo-silueta-blanca.png" alt="Motio Logo" class="app-logo">
+        <div class="title-group">
+            <h1>MotioMetrics - Análisis de Archivo</h1>
+            <div class="subtitle">Análisis de datos registrados de temblor en pacientes</div>
+        </div>
+      </a>
+
+      <div class="toolbar">
+        <label class="btn" for="fileInput">📁 Cargar archivo</label>
+        <button class="btn" id="btnHistoria">🏥 Importar historia clínica</button>
+        <button class="btn-primary" id="btnExport">📄 Exportar informe</button>
+        <input id="fileInput" type="file" accept=".csv" />
+      </div>
+    </header>
+
+    <div class="main-content">
+        
+      <div class="col-left">
+        
+        <section class="card">
+          <h2>Datos de archivo</h2>
+          <div class="content">
+            <div id="dropzone" class="dropzone">
+            <strong>Arrastrá y soltá un archivo .csv acá</strong>
+              <p class="muted" style="margin: 5px 0 0 0;">o usá "Cargar archivo".</p>
+              <!-- Elementos para feedback visual -->
+              <div id="spinner" class="spinner" style="display: none;"></div>
+              <div id="dropzone-message" class="message"></div>
+            </div>
+            </div>
+        </section>
+
+        <section class="card">
+          <h2>Datos del paciente</h2>
+          <div class="content grid">
+            <div style="grid-column: 1 / -1; margin-bottom: 8px;"> 
+              <button class="btn" id="btnSearchPatient" style="width: 100%;">🔍 Buscar paciente</button>
+            </div>
+            
+            <div><label>Nombre y apellido</label><input id="pName" placeholder="Ej: Juan Pérez" /></div>
+            <div><label>ID o historia clínica</label><input id="pId" placeholder="Ej: HCL1234" /></div>
+            <div><label>Edad</label><input id="pAge" type="number" min="1" max="120" placeholder="65" /></div>
+            <div>
+              <label>Género</label>
+              <select id="pGender">
+                <option value="">Seleccionar...</option>
+                <option value="M">Masculino</option>
+                <option value="F">Femenino</option>
+                <option value="O">Otro</option>
+              </select>
+            </div>
+            <div>
+              <label>Posición del dispositivo</label>
+              <select id="pPosition">
+                <option value="">Seleccionar...</option>
+                <option value="Derecha">Mano derecha</option>
+                <option value="Izquierda">Mano izquierda</option>
+              </select>
+            </div>
+            <div><label>Fecha de diagnóstico</label><input id="pDiagDate" type="date" /></div>
+          </div>
+          <div class="content">
+            <button class="btn" id="btnSavePatient">💾 Guardar paciente</button>
+            <div id="recentPatients" class="muted small"></div>
+          </div>
+        </section>
+        
+        <section class="card">
+          <h2>Observaciones</h2>
+          <div class="content">
+            <label>Actividad / Descripción</label>
+            <textarea id="obsDescription" rows="2" placeholder="Ej: Conduciendo un automóvil."></textarea>
+          </div>
+          <div class="content grid" style="grid-template-columns: 1fr 1fr; padding-top: 0; padding-bottom: 12px;"> 
+            <div>
+              <label>Hora de inicio</label>
+              <input id="obsStartTime" type="time" />
+            </div>
+            <div>
+              <label>Hora de fin</label>
+              <input id="obsEndTime" type="time" />
+            </div>
+          </div>
+          
+          <div class="content" style="padding-top: 0;">
+            <button class="btn-primary" id="btnAddObservation">➕ Agregar observación</button>
+          </div>
+          
+          <div class="content" style="padding-top: 8px;"> 
+            <h4 class="muted small" style="margin-bottom: 8px; font-weight: 600;">Observaciones registradas:</h4>
+            <div id="observationList" class="muted small" style="border-top: 1px solid var(--border); padding-top: 8px;">
+                No hay observaciones.
+            </div>
+          </div>
+        </section>
+
+      </div> <div class="col-right">
+    
+        <section class="card">
+          <h2>Métricas Principales</h2>
+          <!-- Contenido actualizado para mostrar valores numéricos -->
+          <div class="content data-grid" style="grid-template-columns: 1fr; gap: 20px;">
+            <div class="metric-card">
+              <span class="metric-label">Frec. Dominante Promedio</span>
+              <span class="metric-value" id="valor-f-dom">-- Hz</span>
+            </div>
+            <div class="metric-card">
+              <span class="metric-label">Pico PSD Promedio</span>
+              <span class="metric-value" id="valor-psd-peak">--</span>
+            </div>
+            <p class="muted" style="text-align: center; margin-top: 10px;">
+              Valores promedio calculados durante episodios de temblor.
+            </p>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Análisis de frecuencia y amplitud</h2>
+          <div class="content chart-wrap">
+            <!-- ¡ACTUALIZADO! Cambiado de <canvas> a <div> para Plotly -->
+            <div id="chartFreqAmp"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Detección de Temblor en el Tiempo</h2>
+          <div class="content chart-wrap">
+            <!-- ¡ACTUALIZADO! Cambiado de <canvas> a <div> para Plotly -->
+            <div id="chartRMSTime"></div>
+          </div>
+        </section>
+        
+      </div>
+      <section class="card full-width-card">
+        <h2>Comparación con mediciones anteriores</h2>
+        <div class="content">
+          <p class="muted">Resumen de registros previos del paciente (frecuencia dominante, fecha).</p>
+          <table id="tableHistory" class="history-table">
+            <thead>
+              <tr><th>Fecha</th><th>Frecuencia dominante (Hz)</th><th>Amplitud (°/s)</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div> <footer>
+      <div>© 2025 Grupo 1 – Instrumentación Biomédica II (ITBA)</div>
+      <div class="muted small">MVP de ficha médica digital – Proyecto de monitoreo en Parkinson</div>
+    </footer>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="analisis_csv.js"></script>
+</body>
+</html>
