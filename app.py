@@ -153,6 +153,14 @@ def procesar_csv_logic(file_stream):
         idx_max = np.argmax(yf_band)
         f_dom = xf_band[idx_max]
         amp_peak = yf_band[idx_max]
+    
+    # --- LÓGICA DE DETECCIÓN DE TEMBLOR ---
+    # Basado en tu script original: si f_dom está en rango y amp supera umbral
+    # Umbral ajustado (en tu script original usabas 0.05 o 0.5 dependiendo del método)
+    # Usaremos 0.1 como un valor seguro para FFT simple.
+    tiene_temblor = False
+    if 3.5 <= f_dom <= 7.5 and amp_peak > 0.05:
+        tiene_temblor = True
 
     # Datos para gráficos (Reducimos puntos si es muy grande para no saturar el JSON)
     factor_diezmo = 1 if len(df) < 1000 else int(len(df)/1000)
