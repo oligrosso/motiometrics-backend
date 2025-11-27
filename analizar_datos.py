@@ -1023,16 +1023,20 @@ print(f"Frecuencia de muestreo (SR): {SR} Hz")
 temblores, df_filt, yaw, pitch, roll = detectar_temblor(df, SR, mostrar_pasos=False)
 rms_ypr, episodios = cuantificar_temblor(df, SR, temblores, graph=False)
 
-# === Graficar resultados ===
+# === GRAFICO 1 AMPLITUD VS TIEMPO & EVENTOS DE TEMBLOR CON ACTIVIDADES===
 graficar_temblor_coloreado(df_filt, SR, yaw, pitch, roll,rms_ypr, episodios,anotaciones=anotaciones)
 
 #detectar_bradicinesia(df, SR, graph=True)
+
+# === GRAFICO 2 AMPLITUD VS FRECUENCIA ===
 graficar_frecuencia_amplitud(df, SR)
+
+# === GRAFICO 3 PSD VS FRECUENCIA===
 frecuencia_temblor(df, episodios, SR)
 
 
 y_true, y_pred = evaluar_deteccion_temblor(df, anotaciones, SR)
-graficar_matriz_confusion(y_true, y_pred, titulo=f"Matriz de Confusión - Detección de Temblor ({PACIENTE})")
+#graficar_matriz_confusion(y_true, y_pred, titulo=f"Matriz de Confusión - Detección de Temblor ({PACIENTE})")
 
 # === EVALUACION GLOBAL ===
 Y_TRUE_GLOBAL = []
@@ -1058,5 +1062,4 @@ for i in range(1, 6):
     Y_PRED_GLOBAL.extend(y_pred)
 
 
-graficar_matriz_confusion(Y_TRUE_GLOBAL, Y_PRED_GLOBAL,
-    titulo="Matriz de Confusión - Detección de Temblor (Global)")
+#graficar_matriz_confusion(Y_TRUE_GLOBAL, Y_PRED_GLOBAL, titulo="Matriz de Confusión - Detección de Temblor (Global)")
