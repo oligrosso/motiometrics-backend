@@ -70,70 +70,71 @@ async function handleFileUpload(file) {
 }
 
 function mostrarResultados(data) {
-    // Actualizar Métricas UI
+    // === 1. Actualizar métricas principales ===
     document.getElementById('valor-f-dom').textContent = `${data.metricas.frecuencia_dominante} Hz`;
-    document.getElementById('valor-psd-peak').textContent = data.metricas.psd_pico;
+    document.getElementById('valor-psd-peak').textContent = data.metricas.psd_pico.toFixed(2);
 
-    // --- LÓGICA DE TEXTO DINÁMICO ---
-    //const textoEstado = document.getElementById('texto-estado-temblor');
-    
-    //if (data.metricas.tiene_temblor) {
-    //    textoEstado.textContent = "Valores promedio calculados durante episodios de temblor.";
-    //    textoEstado.style.color = "var(--muted)"; // Gris normal
-    //    textoEstado.style.fontWeight = "normal";
-    //} else {
-    //    textoEstado.textContent = "El paciente no presentó episodios de temblor significativos.";
-    //    textoEstado.style.color = "var(--success)"; // Verde para indicar "todo bien"
-    //    textoEstado.style.fontWeight = "600";
-    //}
+    // === 2. Gráfico 1: PSD vs Frecuencia (Burg) con línea roja de frecuencia dominante ===
+    const f_dom = data.metricas.frecuencia_dominante;
+    const psd_max = Math.max(...data.graficos.freq_y);
 
-    // Gráfico 1: PSD vs Frecuencia (con Burg)
-    Plotly.newPlot('chartFreqAmp', [{
+    const tracePSD = {
         x: data.graficos.freq_x,
         y: data.graficos.freq_y,
         type: 'scatter',
         mode: 'lines',
         name: 'PSD Promedio',
-        line: {color: 'rgb(0, 132, 199)'}
-    }], {
-        title: 'PSD vs Frecuencia (Método de Burg)',
-        xaxis: {title: 'Frecuencia (Hz)', range: [0, 15]},
-        yaxis: {title: 'PSD'},
-        height: 400,
-        margin: {t: 40, b: 40, l: 40, r: 20}
-    });
-    
-    const layoutFreq = {
-        title: 'Espectro de Frecuencia (FFT)',
-        font: { family: 'Inter, sans-serif' },
-        margin: { t: 40, b: 40, l: 50, r: 20 },
-        xaxis: { title: 'Frecuencia (Hz)' },
-        yaxis: { title: 'Amplitud' },
-        showlegend: false
+        line: { color: '#0284c7', width: 2.5 }
     };
-    
-    Plotly.newPlot('chartFreqAmp', [traceFreq], layoutFreq);
 
-    // Gráfico 2: RMS
+    const traceDominante = {
+        x: [f_dom, f_dom],
+        y: [0, psd_max * 1.1],  // un poco más arriba del pico
+        mode: 'lines',
+        line: { color: 'red', width: 2, dash: 'dash' },
+        name: `F. dominante: ${f_dom.toFixed(2)} Hz`,
+        hoverinfo: 'none'
+    };
+
+    const puntoDominante = {
+        x: [f_dom],
+        y: [psd_max],
+        mode: 'markers',
+        marker: { color: 'red', size: 10 },
+        name: 'Pico dominante',
+        hoverinfo: 'none'
+    };
+
+    Plotly.newPlot('chartFreqAmp', [tracePSD, traceDominante, puntoDominante], {
+        title: 'PSD vs Frecuencia (Método de Burg)',
+        xaxis: { title: 'Frecuencia (Hz)', range: [0, 15] },
+        yaxis: { title: 'PSD (Potencia)' },
+        height: 420,
+        margin: { t: 50, b: 50, l: 60, r: 30 },
+        hovermode: 'x unified',
+        legend: { x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.8)' }
+    });
+
+    // === 3. Gráfico 2: RMS vs Tiempo (ahora SÍ se dibuja) ===
     const traceRMS = {
         x: data.graficos.tiempo,
         y: data.graficos.rms,
         type: 'scatter',
         mode: 'lines',
         name: 'RMS Combinado',
-        line: { color: '#dc2626', width: 1.5 }
+        line: { color: '#dc2626', width: 2 },
+        fill: 'tozeroy',
+        fillcolor: 'rgba(220, 38, 38, 0.15)'
     };
 
-    const layoutRMS = {
-        title: 'Energía del Temblor (RMS) en el tiempo',
-        font: { family: 'Inter, sans-serif' },
-        margin: { t: 40, b: 40, l: 50, r: 20 },
+    Plotly.newPlot('chartRMSTime', [traceRMS], {
+        title: 'Energía del Temblor (RMS) en el Tiempo',
         xaxis: { title: 'Tiempo' },
         yaxis: { title: 'Amplitud RMS' },
-        showlegend: false
-    };
-
-    Plotly.newPlot('chartRMSTime', [traceRMS], layoutRMS);
+        height: 420,
+        margin: { t: 50, b: 50, l: 60, r: 30 },
+        hovermode: 'x unified'
+    });
 }
 
 // --- 2. GESTIÓN DE OBSERVACIONES ---
