@@ -11,7 +11,6 @@ from collections import deque
 from datetime import datetime
 import scipy.signal as signal
 from scipy.signal import butter, filtfilt, hilbert
-# Nota: Asegúrate de tener 'spectrum' en requirements.txt si usas pburg
 from spectrum import pburg
 
 app = Flask(__name__)
@@ -98,84 +97,159 @@ def leer_datos():
     return jsonify({"error": "Acción no válida"}), 400
 
 # --- LÓGICA DE ANÁLISIS CSV (Adaptada de analizar_datos.py) ---
+def filtro_pb(senial, sr, low, high):
+    nyq = 0.5 * sr
+    b, a = butter(4, [low/nyq, high/nyq], btype='band')
+    return filtfilt(b, a, senial)
 
-def procesar_csv_logic(file_stream):
-    # 1. Cargar Datos
-    df = pd.read_csv(file_stream, sep=",", encoding="latin1", on_bad_lines="skip")
+def detectar_temblor(df, SR, mostrar_pasos=False):
+    # Filtro pasabanda 3.5-7.5 Hz (temblor PD)
+    yaw = filtro_pb(df['Yaw'], SR, 3.5, 7.5)
+    pitch = filtro_pb(df['Pitch'], SR, 3.5, 7.5)
+    roll = filtro_pb(df['Roll'], SR, 3.5, 7.5)
+    
+    # Envolvente Hilbert
+    env_yaw = np.abs(hilbert(yaw))
+    env_pitch = np.abs(hilbert(pitch))
+    env_roll = np.abs(hilbert(roll))
+    
+    # Suavizado (filtro pasa bajo)
+    fc = 1  # Hz
+    nyq = 0.5 * SR
+    b, a = butter(2, fc/nyq, btype='low')
+    env_yaw = filtfilt(b, a, env_yaw)
+    env_pitch = filtfilt(b, a, env_pitch)
+    env_roll = filtfilt(b, a, env_roll)
+    
+    # Umbral (media + 1.5 * std)
+    umbral_yaw = np.mean(env_yaw) + 1.5 * np.std(env_yaw)
+    umbral_pitch = np.mean(env_pitch) + 1.5 * np.std(env_pitch)
+    umbral_roll = np.mean(env_roll) + 1.5 * np.std(env_roll)
+    
+    # Detección (1 si supera umbral)
+    temblores = {
+        'Yaw': (env_yaw > umbral_yaw).astype(int),
+        'Pitch': (env_pitch > umbral_pitch).astype(int),
+        'Roll': (env_roll > umbral_roll).astype(int)
+    }
+    
+    df_filt = df.copy()
+    df_filt['Yaw'] = yaw
+    df_filt['Pitch'] = pitch
+    df_filt['Roll'] = roll
+    
+    return temblores, df_filt, yaw, pitch, roll
+
+def cuantificar_temblor(df, SR, temblores, graph=False):
+    win_len = int(SR * 1)  # Ventana de 1 seg
+    win_step = int(SR * 0.5)  # Paso de 0.5 seg
+    
+    # RMS por ventana para cada eje
+    rms_yaw = []
+    rms_pitch = []
+    rms_roll = []
+    
+    for i in range(0, len(df) - win_len + 1, win_step):
+        chunk_yaw = df['Yaw'].iloc[i:i+win_len]
+        chunk_pitch = df['Pitch'].iloc[i:i+win_len]
+        chunk_roll = df['Roll'].iloc[i:i+win_len]
+        
+        rms_yaw.append(np.sqrt(np.mean(chunk_yaw**2)))
+        rms_pitch.append(np.sqrt(np.mean(chunk_pitch**2)))
+        rms_roll.append(np.sqrt(np.mean(chunk_roll**2)))
+    
+    rms_yaw = np.array(rms_yaw)
+    rms_pitch = np.array(rms_pitch)
+    rms_roll = np.array(rms_roll)
+    
+    # RMS combinado
+    rms_ypr = np.sqrt(rms_yaw**2 + rms_pitch**2 + rms_roll**2)
+    
+    # Episodios de temblor (donde al menos un eje detecta temblor)
+    episodios = []
+    for eje in temblores.values():
+        diffs = np.diff(np.concatenate([[0], eje, [0]]))
+        starts = np.where(diffs == 1)[0]
+        ends = np.where(diffs == -1)[0]
+        for s, e in zip(starts, ends):
+            if e - s > SR * 2:  # Mínimo 2 seg
+                episodios.append((s, e))
+    
+    return rms_ypr, episodios
+
+def frecuencia_temblor(df, episodios, SR):
+    if not episodios:
+        return [], 0  # No hay episodios
+    
+    # PSD por episodio (Burg)
+    orden = 15
+    psd_interp = []
+    freqs_std = np.linspace(0, SR/2, 1000)  # Frecuencias estándar
+    
+    for start, end in episodios:
+        seg_yaw = df['Yaw'].iloc[start:end]
+        seg_pitch = df['Pitch'].iloc[start:end]
+        seg_roll = df['Roll'].iloc[start:end]
+        
+        # PSD por eje y promedio
+        psd_yaw = pburg(seg_yaw, order=orden, NFFT=512, sampling=SR)
+        psd_pitch = pburg(seg_pitch, order=orden, NFFT=512, sampling=SR)
+        psd_roll = pburg(seg_roll, order=orden, NFFT=512, sampling=SR)
+        
+        psd_avg = (psd_yaw.psd + psd_pitch.psd + psd_roll.psd) / 3
+        freqs_original = psd_yaw.frequencies()
+        
+        # Interpolar
+        psd = np.interp(freqs_std, freqs_original, psd_avg)
+        psd_interp.append(psd)
+    
+    # PSD promedio global
+    psd_mean = np.mean(psd_interp, axis=0)
+    
+    # Frecuencia dominante
+    idx_max = np.argmax(psd_mean)
+    f_dom_mean = freqs_std[idx_max]
+    
+    # Frecuencias dominantes por episodio (para retorno original, pero no lo usamos)
+    frecuencias = [freqs_std[np.argmax(psd)] for psd in psd_interp]
+    
+    return frecuencias, f_dom_mean, freqs_std, psd_mean  # Agregamos freqs_std y psd_mean para el gráfico
+
+def procesar_csv_logic(stream):
+    df = pd.read_csv(stream, sep=",", encoding="latin1", on_bad_lines="skip")
     df.columns = df.columns.str.strip()
-    
-    # Limpieza básica (igual que tu script)
-    cols_req = ['Yaw','Pitch','Roll']
-    for col in cols_req:
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+    for col in ['Yaw','Pitch','Roll','Ax','Ay','Az']:
         df[col] = pd.to_numeric(df[col].astype(str).str.strip(), errors='coerce')
-    df = df.dropna(subset=cols_req)
-    
-    # Calcular SR (Frecuencia de muestreo)
-    try:
-        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        diffs = df['Timestamp'].diff().dropna().dt.total_seconds()
-        diffs = diffs[diffs > 0]
-        SR = int(round(1 / diffs.mean())) if not diffs.empty else 50
-    except:
-        SR = 50 # Fallback
+    df = df.dropna(subset=['Yaw','Pitch','Roll','Ax','Ay','Az'])
 
-    # 2. Análisis Espectral (Simplificado para JSON)
-    # Filtro Pasa Bandas 3.5 - 7.5 Hz (Tu lógica de cuantificar_temblor)
-    def filtro_pb(senial, sr, low, high):
-        nyq = 0.5 * sr
-        b, a = butter(4, [low/nyq, high/nyq], btype='band')
-        return filtfilt(b, a, senial)
+    diffs = df['Timestamp'].diff().dropna().dt.total_seconds()
+    diffs = diffs[diffs > 0]
+    SR = 1 / diffs.mean()
+    SR = int(round(SR))
 
-    yaw_band = filtro_pb(df['Yaw'], SR, 3.5, 7.5)
-    pitch_band = filtro_pb(df['Pitch'], SR, 3.5, 7.5)
-    roll_band = filtro_pb(df['Roll'], SR, 3.5, 7.5)
-    
-    # RMS Combinado
-    rms_ypr = np.sqrt(yaw_band**2 + pitch_band**2 + roll_band**2)
-    
-    # Frecuencia Dominante (usando FFT simple para velocidad)
-    # Promediamos los 3 ejes
-    promedio_ejes = (df['Yaw'] + df['Pitch'] + df['Roll']) / 3
-    N = len(promedio_ejes)
-    T = 1.0 / SR
-    yf = np.fft.fft(promedio_ejes.values)
-    xf = np.fft.fftfreq(N, T)[:N//2]
-    yf_magnitude = 2.0 / N * np.abs(yf[0:N//2])
-    
-    # Buscar pico entre 3 y 10 Hz
-    mask = (xf >= 3) & (xf <= 10)
-    xf_band = xf[mask]
-    yf_band = yf_magnitude[mask]
-    
-    f_dom = 0
-    amp_peak = 0
-    if len(yf_band) > 0:
-        idx_max = np.argmax(yf_band)
-        f_dom = xf_band[idx_max]
-        amp_peak = yf_band[idx_max]
-    
-    # --- LÓGICA DE DETECCIÓN DE TEMBLOR ---
-    # Basado en tu script original: si f_dom está en rango y amp supera umbral
-    # Umbral ajustado (en tu script original usabas 0.05 o 0.5 dependiendo del método)
-    # Usaremos 0.1 como un valor seguro para FFT simple.
-    #tiene_temblor = False
-    #if 3.5 <= f_dom <= 7.5 and amp_peak > 0.05:
-    #    tiene_temblor = True
+    # Llamadas a las nuevas funciones (reemplaza el filtro y FFT simple)
+    temblores, df_filt, yaw, pitch, roll = detectar_temblor(df, SR)
+    rms_ypr, episodios = cuantificar_temblor(df, SR, temblores)
+    frecuencias, f_dom_mean, freqs_std, psd_mean = frecuencia_temblor(df_filt, episodios, SR)  # Usamos df_filt
 
-    # Datos para gráficos (Reducimos puntos si es muy grande para no saturar el JSON)
+    # Métricas actualizadas con Burg
+    psd_pico = np.max(psd_mean) if len(psd_mean) > 0 else 0
+
+    # Datos para gráficos (diezmo si es grande)
     factor_diezmo = 1 if len(df) < 1000 else int(len(df)/1000)
-    
+
     return {
         "metricas": {
-            "frecuencia_dominante": round(float(f_dom), 2),
-            "psd_pico": round(float(amp_peak), 2),
+            "frecuencia_dominante": round(float(f_dom_mean), 2),
+            "psd_pico": round(float(psd_pico), 2),
             "sr": SR
         },
         "graficos": {
             "tiempo": df['Timestamp'].astype(str).iloc[::factor_diezmo].tolist(),
-            "rms": rms_ypr[::factor_diezmo].tolist(),
-            "freq_x": xf_band.tolist(),
-            "freq_y": yf_band.tolist()
+            "rms": rms_ypr[::factor_diezmo].tolist() if len(rms_ypr) > 0 else [],  # RMS como antes
+            "freq_x": freqs_std.tolist(),  # Ahora freqs_std de Burg
+            "freq_y": psd_mean.tolist()    # Ahora psd_mean de Burg
         }
     }
 
