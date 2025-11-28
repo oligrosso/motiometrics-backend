@@ -87,17 +87,21 @@ function mostrarResultados(data) {
     //    textoEstado.style.fontWeight = "600";
     //}
 
-    // Gráfico 1: Espectro
-    const traceFreq = {
+    // Gráfico 1: PSD vs Frecuencia (con Burg)
+    Plotly.newPlot('chartFreqAmp', [{
         x: data.graficos.freq_x,
         y: data.graficos.freq_y,
         type: 'scatter',
         mode: 'lines',
-        name: 'Espectro',
-        line: { color: '#0284c7', width: 2 },
-        fill: 'tozeroy', // Relleno bonito
-        fillcolor: 'rgba(2, 132, 199, 0.1)'
-    };
+        name: 'PSD Promedio',
+        line: {color: 'rgb(0, 132, 199)'}
+    }], {
+        title: 'PSD vs Frecuencia (Método de Burg)',
+        xaxis: {title: 'Frecuencia (Hz)', range: [0, 15]},
+        yaxis: {title: 'PSD'},
+        height: 400,
+        margin: {t: 40, b: 40, l: 40, r: 20}
+    });
     
     const layoutFreq = {
         title: 'Espectro de Frecuencia (FFT)',
