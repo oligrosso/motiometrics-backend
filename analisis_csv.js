@@ -107,7 +107,7 @@ function mostrarResultados(data) {
 
     Plotly.newPlot('chartFreqAmp', [tracePSD, traceDominante, puntoDominante], {
         title: 'PSD vs Frecuencia (Método de Burg)',
-        xaxis: { title: 'Frecuencia (Hz)', range: [0, 15] },
+        xaxis: { title: 'Frecuencia (Hz)', range: [0, 10] },
         yaxis: { title: 'PSD (Potencia)' },
         height: 420,
         margin: { t: 50, b: 50, l: 60, r: 30 },
